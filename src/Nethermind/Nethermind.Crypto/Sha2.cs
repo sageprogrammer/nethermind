@@ -22,23 +22,21 @@ namespace Nethermind.Crypto
 {
     public static class Sha2
     {
-        private static readonly IHash Hash = HashFactory.Crypto.CreateSHA256();
-
         public static byte[] Compute(byte[] input)
         {
-            return Hash.ComputeBytes(input).GetBytes();
+            return HashFactory.Crypto.CreateSHA256().ComputeBytes(input).GetBytes();
         }
-        
+
         public static byte[] Compute(Span<byte> input)
         {
-            return Hash.ComputeBytes(input).GetBytes();
+            return HashFactory.Crypto.CreateSHA256().ComputeBytes(input).GetBytes();
         }
 
         public static string ComputeString(byte[] input)
         {
             return Compute(input).ToHexString(false);
         }
-        
+
         public static string ComputeString(string input)
         {
             return ComputeString(System.Text.Encoding.UTF8.GetBytes(input));
