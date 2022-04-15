@@ -27,7 +27,7 @@ using Nethermind.Trie.Pruning;
 
 namespace Nethermind.State;
 
-public class VerkleStorageProvider: IStorageProvider
+public class VerkleStorageProvider : IStorageProvider
 {
     private readonly ResettableDictionary<StorageCell, StackList<int>> _intraBlockCache = new();
 
@@ -53,7 +53,7 @@ public class VerkleStorageProvider: IStorageProvider
     // stack of snapshot indexes on changes for start of each transaction
     // this is needed for OriginalValues for new transactions
     private readonly Stack<int> _transactionChangesSnapshots = new();
-    
+
     public VerkleStorageProvider(VerkleStateProvider? stateProvider, ILogManager? logManager)
     {
         _logManager = logManager ?? throw new ArgumentNullException(nameof(logManager));
@@ -87,12 +87,18 @@ public class VerkleStorageProvider: IStorageProvider
         return GetCurrentValue(storageCell);
     }
 
+    public ((Address, Int256.UInt256), int) GetAccessEvent(StorageCell storageCell)
+    {
+        var (treeIndex, subIndex) = _stateProvider.GetSlot(storageCell.Index);
+        return ((storageCell.Address, treeIndex), subIndex);
+    }
+
     public void Set(StorageCell storageCell, byte[] value)
     {
         byte[] newValue = new BigInteger(value, false, true).ToBigEndianByteArray(32);
         PushUpdate(storageCell, newValue);
     }
-    
+
     int IStorageProvider.TakeSnapshot(bool newTransactionStart)
     {
         if (_logger.IsTrace) _logger.Trace($"Storage snapshot {_currentPosition}");
@@ -111,7 +117,7 @@ public class VerkleStorageProvider: IStorageProvider
         {
             throw new InvalidOperationException($"{nameof(VerkleStorageProvider)} tried to restore snapshot {snapshot} beyond current position {_currentPosition}");
         }
-        
+
         if (snapshot == _currentPosition)
         {
             return;
@@ -159,7 +165,7 @@ public class VerkleStorageProvider: IStorageProvider
             _changes[_currentPosition] = kept;
             _intraBlockCache[kept.StorageCell].Push(_currentPosition);
         }
-        
+
         while (_transactionChangesSnapshots.TryPeek(out int lastOriginalSnapshot) && lastOriginalSnapshot > snapshot)
         {
             _transactionChangesSnapshots.Pop();
@@ -320,7 +326,7 @@ public class VerkleStorageProvider: IStorageProvider
         _committedThisRound.Clear();
         Array.Clear(_changes, 0, _changes.Length);
     }
-    
+
     // TODO: use the commit tree function from VerkleStateProvider -> VerkleStateTree
     public void CommitTrees(long blockNumber)
     {

@@ -257,22 +257,26 @@ public class VerkleTree
         return GetTreeKey(address, treeIndex, subIndex.ToBigEndian()[31]);
     }
 
-    public byte[] GetTreeKeyForStorageSlot(Address address, UInt256 storageKey)
-    {
+    public (UInt256,UInt256) GetSlot(UInt256 storageKey){
         UInt256 pos;
-        
+
         if (storageKey < CodeOffset - HeaderStorageOffset)
         {
             pos = HeaderStorageOffset + storageKey;
-        } 
+        }
         else
         {
             pos = MainStorageOffset + storageKey;
         }
 
         UInt256 treeIndex = pos / VerkleNodeWidth;
-        
+
         UInt256.Mod(pos, VerkleNodeWidth, out UInt256 subIndex);
+        return (treeIndex,subIndex);
+    }
+    public byte[] GetTreeKeyForStorageSlot(Address address, UInt256 storageKey)
+    {
+        var (treeIndex,subIndex) = GetSlot(storageKey);
         return GetTreeKey(address, treeIndex, subIndex.ToBigEndian()[31]);
     }
         

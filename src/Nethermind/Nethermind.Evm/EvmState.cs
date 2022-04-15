@@ -113,6 +113,8 @@ namespace Nethermind.Evm
         /// EIP-2929 accessed storage keys
         /// </summary>
         public IReadOnlySet<StorageCell> AccessedStorageCells => _accessedStorageCells;
+        public IReadOnlySet<(Address, UInt256)> AccessesSubtrees => _accessedSubtrees;
+        public IReadOnlySet<((Address, UInt256),int)> AccessesLeaves => _accessedLeaves;
         
         // As we can add here from VM, we need it as ICollection
         public ICollection<Address> DestroyList => _destroyList;
@@ -121,12 +123,16 @@ namespace Nethermind.Evm
 
         private readonly JournalSet<Address> _accessedAddresses;
         private readonly JournalSet<StorageCell> _accessedStorageCells;
+        private readonly JournalSet<(Address, UInt256)> _accessedSubtrees;
+        private readonly JournalSet<((Address, UInt256),int)> _accessedLeaves;
         private readonly JournalCollection<LogEntry> _logs;
         private readonly JournalSet<Address> _destroyList;
         private readonly int _accessedAddressesSnapshot;
         private readonly int _accessedStorageKeysSnapshot;
         private readonly int _destroyListSnapshot;
         private readonly int _logsSnapshot;
+        private readonly int _accessedSubtreesSnapshot;
+        private readonly int _accessedLeavesSnapshot;
 
         public int DataStackHead = 0;
         
@@ -192,6 +198,8 @@ namespace Nethermind.Evm
                 _accessedStorageCells = stateForAccessLists._accessedStorageCells;
                 _destroyList = stateForAccessLists._destroyList;
                 _logs = stateForAccessLists._logs;
+                _accessedSubtrees = stateForAccessLists._accessedSubtrees;
+                _accessedLeaves = stateForAccessLists._accessedLeaves;
             }
             else
             {
@@ -200,12 +208,16 @@ namespace Nethermind.Evm
                 _accessedStorageCells = new JournalSet<StorageCell>();
                 _destroyList = new JournalSet<Address>();
                 _logs = new JournalCollection<LogEntry>();
+                _accessedSubtrees = new JournalSet<(Address, UInt256)>();
+                _accessedLeaves = new JournalSet<((Address, UInt256), int)>();
             }
 
             _accessedAddressesSnapshot = _accessedAddresses.TakeSnapshot();
             _accessedStorageKeysSnapshot = _accessedStorageCells.TakeSnapshot();
             _destroyListSnapshot = _destroyList.TakeSnapshot();
             _logsSnapshot = _logs.TakeSnapshot();
+            _accessedSubtreesSnapshot=_accessedSubtrees.TakeSnapshot();
+            _accessedLeavesSnapshot = _accessedLeaves.TakeSnapshot();
 
         }
 
@@ -287,6 +299,13 @@ namespace Nethermind.Evm
 
         public void WarmUp(StorageCell storageCell) => _accessedStorageCells.Add(storageCell);
 
+        public void WarmUp(((Address, UInt256), int) leaf)
+        {
+            _accessedLeaves.Add(leaf);
+            var (subtree, _) = leaf;
+            _accessedSubtrees.Add(subtree);
+        }
+
         public void CommitToParent(EvmState parentState)
         {
             parentState.Refund += Refund;
@@ -301,6 +320,8 @@ namespace Nethermind.Evm
                 _destroyList.Restore(_destroyListSnapshot);
                 _accessedAddresses.Restore(_accessedAddressesSnapshot);
                 _accessedStorageCells.Restore(_accessedStorageKeysSnapshot);
+                _accessedSubtrees.Restore(_accessedSubtreesSnapshot);
+                _accessedLeaves.Restore(_accessedLeavesSnapshot);
             }
         }
     }

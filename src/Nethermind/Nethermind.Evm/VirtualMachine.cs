@@ -92,6 +92,10 @@ namespace Nethermind.Evm
             InitializePrecompiledContracts();
         }
 
+        private bool isVerkle(){
+            return (_state is VerkleStateProvider);
+        }
+
         public TransactionSubstate Run(EvmState state, IWorldState worldState, ITxTracer txTracer)
         {
             _txTracer = txTracer;
@@ -189,7 +193,7 @@ namespace Nethermind.Evm
                         if (_txTracer.IsTracingActions)
                         {
                             long codeDepositGasCost = CodeDepositHandler.CalculateCost(callResult.Output.Length, spec);
-                            
+                            long verkleCost = GasCostOf.WitnessBranch * currentState.AccessesSubtrees.Count + GasCostOf.WitnessChunk * currentState.AccessesLeaves.Count;
                             if (callResult.IsException)
                             {
                                 _txTracer.ReportActionError(callResult.ExceptionType);
@@ -207,7 +211,7 @@ namespace Nethermind.Evm
                             }
                             else
                             {
-                                if (currentState.ExecutionType.IsAnyCreate() && currentState.GasAvailable < codeDepositGasCost)
+                                if (currentState.ExecutionType.IsAnyCreate() && currentState.GasAvailable < codeDepositGasCost+verkleCost)
                                 {
                                     _txTracer.ReportActionError(EvmExceptionType.OutOfGas);
                                 }
@@ -495,6 +499,11 @@ namespace Nethermind.Evm
             SSTORE
         }
         
+        private void WarmUpVerkleStorage(EvmState vmState, StorageCell storageCell){
+            var verkleStore = (VerkleStorageProvider)_storage;
+            vmState.WarmUp(verkleStore.GetAccessEvent(storageCell));
+        }
+
         private bool ChargeStorageAccessGas(
             ref long gasAvailable,
             EvmState vmState,
@@ -510,12 +519,18 @@ namespace Nethermind.Evm
                 if (_txTracer.IsTracingAccess) // when tracing access we want cost as if it was warmed up from access list
                 {
                     vmState.WarmUp(storageCell);
+                    if(isVerkle()){
+                        WarmUpVerkleStorage(vmState,storageCell);
+                    }
                 }
 
                 if (vmState.IsCold(storageCell))
                 {
                     result = UpdateGas(GasCostOf.ColdSLoad, ref gasAvailable);
                     vmState.WarmUp(storageCell);
+                    if(isVerkle()){
+                        WarmUpVerkleStorage(vmState,storageCell);
+                    }
                 }
                 else if (storageAccessType == StorageAccessType.SLOAD)
                 {
@@ -1347,7 +1362,10 @@ namespace Nethermind.Evm
                             EndInstructionTraceError(EvmExceptionType.OutOfGas);
                             return CallResult.OutOfGasException;
                         }
-                        
+                        if (isVerkle())
+                        {
+                            vmState.WarmUp(((address, 0), AccountTreeIndexes.Balance));
+                        }
                         UInt256 balance = _state.GetBalance(address);
                         stack.PushUInt256(in balance);
                         break;
@@ -2445,7 +2463,6 @@ namespace Nethermind.Evm
 
                         Address caller = instruction == Instruction.DELEGATECALL ? env.Caller : env.ExecutingAccount;
                         Address target = instruction == Instruction.CALL || instruction == Instruction.STATICCALL ? codeSource : env.ExecutingAccount;
-
                         if (isTrace)
                         {
                             _logger.Trace($"caller {caller}");
@@ -2455,11 +2472,29 @@ namespace Nethermind.Evm
                             _logger.Trace($"transfer value {transferValue}");
                         }
 
+                        if (isVerkle())
+                        {
+                            switch(instruction){
+                                case Instruction.CALL:
+                                case Instruction.CALLCODE:
+                                case Instruction.DELEGATECALL:{
+                                    vmState.WarmUp(((target, 0), AccountTreeIndexes.Version));
+                                    vmState.WarmUp(((target, 0), AccountTreeIndexes.CodeSize));
+                                    break;
+                                }
+                            }
+                        }
                         long gasExtra = 0L;
 
                         if (!transferValue.IsZero)
                         {
                             gasExtra += GasCostOf.CallValue;
+                            if (isVerkle())
+                            {
+                                vmState.WarmUp(((caller, 0), AccountTreeIndexes.Balance));
+                                vmState.WarmUp(((target, 0), AccountTreeIndexes.Balance));
+                                       
+                            }
                         }
 
                         if (!spec.ClearEmptyAccountWhenTouched && !_state.AccountExists(target))
@@ -2647,6 +2682,10 @@ namespace Nethermind.Evm
                         }
                         else if (!inheritor.Equals(env.ExecutingAccount))
                         {
+                            if (isVerkle()){
+                                vmState.WarmUp(((env.ExecutingAccount, 0), AccountTreeIndexes.Balance));
+                                vmState.WarmUp(((inheritor, 0), AccountTreeIndexes.Balance));
+                            }
                             _state.AddToBalance(inheritor, ownerBalance, spec);
                         }
 
@@ -2778,6 +2817,9 @@ namespace Nethermind.Evm
                         }
                         else
                         {
+                            if(isVerkle()){
+                                vmState.WarmUp(((address, 0), AccountTreeIndexes.CodeHash));
+                            }
                             stack.PushBytes(_state.GetCodeHash(address).Bytes);
                         }
 
